@@ -3,8 +3,6 @@ import type { NextApiHandler, NextApiResponse } from "next";
 import type { Ratelimit } from "@upstash/ratelimit";
 import { ratelimit } from "@/lib/upstash";
 
-// TODO: Use a Generic T
-
 type WithRatelimitConfig = {
   ratelimit: Ratelimit;
   identifier: string | ((req: Parameters<Handler>[0]) => string);
@@ -22,7 +20,10 @@ function isEdge(res: NextResponse | NextApiResponse): res is NextResponse {
   return !(res as NextResponse).status;
 }
 
-export function withRatelimit(config: WithRatelimitConfig, handler: Handler) {
+export function withRatelimit<T extends Handler>(
+  config: WithRatelimitConfig,
+  handler: T
+) {
   return async function (
     req: Parameters<typeof handler>[0],
     res: Parameters<typeof handler>[1]
@@ -45,7 +46,7 @@ export function withRatelimit(config: WithRatelimitConfig, handler: Handler) {
   };
 }
 
-export function withDefaultRatelimit(handler: Handler) {
+export function withDefaultRatelimit<T extends Handler>(handler: T) {
   return withRatelimit(
     {
       ratelimit,
