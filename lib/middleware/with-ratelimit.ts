@@ -3,7 +3,7 @@ import type { NextApiHandler, NextApiResponse } from "next";
 import type { Ratelimit } from "@upstash/ratelimit";
 import { ratelimit } from "@/lib/upstash";
 
-type Handler = NextApiHandler | NextEdgeHandler;
+// TODO: Use a Generic T
 
 type WithRatelimitConfig = {
   ratelimit: Ratelimit;
@@ -16,6 +16,8 @@ type NextEdgeHandler = (
   res: NextResponse
 ) => unknown | Promise<unknown>;
 
+type Handler = NextApiHandler | NextEdgeHandler;
+
 function isEdge(res: NextResponse | NextApiResponse): res is NextResponse {
   return !(res as NextResponse).status;
 }
@@ -26,12 +28,8 @@ export function withRatelimit(config: WithRatelimitConfig, handler: Handler) {
     res: Parameters<typeof handler>[1]
   ) {
     const { ratelimit, identifier: _identifier, error } = config;
-    let identifier: string;
-    if (typeof _identifier === "string") {
-      identifier = _identifier;
-    } else {
-      identifier = _identifier(req);
-    }
+    const identifier =
+      typeof _identifier === "string" ? _identifier : _identifier(req);
     const { success } = await ratelimit.limit(identifier);
     if (!success) {
       if (isEdge(res)) {
