@@ -1,20 +1,30 @@
-import type { NextApiHandler, NextApiRequest, NextApiResponse } from "next";
+import type { NextResponse, NextRequest } from "next/server";
+import type { NextApiHandler, NextApiResponse } from "next";
 import type { Ratelimit } from "@upstash/ratelimit";
 import { ratelimit } from "@/lib/upstash";
 
+type Handler = NextApiHandler | NextEdgeHandler;
+
 type WithRatelimitConfig = {
   ratelimit: Ratelimit;
-  identifier:
-    | string // use a constant to limit all requests with a single ratelimit
-    | ((req: NextApiRequest) => string); // use a variable from the request for individual limits
+  identifier: string | ((req: Parameters<Handler>[0]) => string);
   error?: string;
 };
 
-export function withRatelimit(
-  config: WithRatelimitConfig,
-  handler: NextApiHandler
-) {
-  return async function (req: NextApiRequest, res: NextApiResponse) {
+type NextEdgeHandler = (
+  req: NextRequest,
+  res: NextResponse
+) => unknown | Promise<unknown>;
+
+function isEdge(res: NextResponse | NextApiResponse): res is NextResponse {
+  return !(res as NextResponse).status;
+}
+
+export function withRatelimit(config: WithRatelimitConfig, handler: Handler) {
+  return async function (
+    req: Parameters<typeof handler>[0],
+    res: Parameters<typeof handler>[1]
+  ) {
     const { ratelimit, identifier: _identifier, error } = config;
     let identifier: string;
     if (typeof _identifier === "string") {
@@ -23,16 +33,21 @@ export function withRatelimit(
       identifier = _identifier(req);
     }
     const { success } = await ratelimit.limit(identifier);
-
     if (!success) {
-      return res.status(429).end(error || "Too Many Requests");
+      if (isEdge(res)) {
+        return new Response(error || "Too Many Requests", {
+          status: 429,
+        });
+      } else {
+        return res.status(429).end(config.error || "Too Many Requests");
+      }
     }
-
+    // @ts-ignore FIXME: `Type 'NextRequest' is not assignable to type 'NextApiRequest & NextRequest'.`
     return handler(req, res);
   };
 }
 
-export function withDefaultRatelimit(handler: NextApiHandler) {
+export function withDefaultRatelimit(handler: Handler) {
   return withRatelimit(
     {
       ratelimit,
